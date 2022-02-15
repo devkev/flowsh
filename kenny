@@ -1,0 +1,48 @@
+#!/bin/bash
+
+input="$1"
+
+function show {
+    case "$1" in
+        bottom|end) local cmd=G ;;
+        top|start|*) local cmd=g ;;
+    esac
+    LESSOPEN= LESS= less -j1 -QXER +"${cmd}"q
+}
+export -f show
+
+function generate {
+    cat "$input" \
+        | sed -e '/^#/d' -e '/^$/d' \
+        | awk '
+            {
+                if (NR > 1) {
+                    printf("| ");
+                }
+                printf("%s ", $0);
+                if ($1 == "show") {
+                    exit;
+                }
+            }
+            END {
+                if ($1 != "show") {
+                    print("| show");
+                }
+            }
+            '
+}
+
+clear
+#generate | show
+# would be nice to show some sort of progress spinner...
+bash <(generate)
+
+# wait for $input file to change
+if inotifywait -qq -e close_write,move_self "$input"; then
+    # actual change
+    exec "$0" "$@"
+else
+    # failure
+    exit $?
+fi
+
