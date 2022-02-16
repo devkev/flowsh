@@ -1,6 +1,14 @@
 #!/bin/bash
 
+if [ $# -ne 1 ]; then
+	echo "$0: Usage: $0 <input.kenny>" 1>&2
+	exit 1
+fi
+
 input="$1"
+cachedir="$(dirname ${input})/.cache"
+
+mkdir -p "$cachedir"
 
 function show {
     case "$1" in
@@ -11,38 +19,95 @@ function show {
 }
 export -f show
 
-function generate {
-    cat "$input" \
-        | sed -e '/^#/d' -e '/^$/d' \
-        | awk '
-            {
-                if (NR > 1) {
-                    printf("| ");
-                }
-                printf("%s ", $0);
-                if ($1 == "show") {
-                    exit;
-                }
-            }
-            END {
-                if ($1 != "show") {
-                    print("| show");
-                }
-            }
-            '
+function read_commands {
+    readarray -t commands < <(sed -e '/^#/d' -e 's/^\s*//g' -e 's/\s*$//g' -e '/^$/d' "$input")
 }
+
+function generate_pipeline {
+	readarray -t pipeline_lines < <(
+		use_cache=''
+		cmdhash=''
+		for cmd in "${commands[@]}"; do
+			cmdhash="$(sha256sum <<<"$cmdhash $cmd" | awk '{print $1}')"
+			if [ -e "$cachedir/$cmdhash" ]; then
+				# can skip this one, and use the cached results instead
+				use_cache="$cachedir/$cmdhash"
+			else
+				# cannot skip, must use (plus any previous cache input)
+				if [ "$use_cache" ]; then
+					echo "cat '$use_cache' |"
+					use_cache=''
+				fi
+				echo "$cmd |"
+				echo "tee '$cachedir/$cmdhash' |"
+			fi
+		done
+		if [ "$use_cache" ]; then
+			echo "cat '$use_cache'"
+		else
+			echo "cat"
+		fi
+	)
+}
+
+pid_less=''
+pid_inotifywait=''
+function cleanup {
+	if [ "$pid_less" ]; then
+		kill "$pid_less" > /dev/null 2>&1
+		pid_less=''
+	fi
+	if [ "$pid_inotifywait" ]; then
+		kill "$pid_inotifywait" > /dev/null 2>&1
+		pid_inotifywait=''
+	fi
+}
+
+read_commands
+#declare -p commands
+#echo
+#for cmd in "${commands[@]}"; do
+#	echo "$cmd"
+#done
+#echo
+
+generate_pipeline
+#declare -p pipeline_lines
+#echo
+#for line in "${pipeline_lines[@]}"; do
+#	echo "$line"
+#done
+#echo
 
 clear
 #generate | show
 # would be nice to show some sort of progress spinner...
-bash <(generate)
+bash <(echo "${pipeline_lines[@]}") | LESS= less -nLQXR &
+pid_less="$!"
 
-# wait for $input file to change
-if inotifywait -qq -e close_write,move_self "$input"; then
-    # actual change
-    exec "$0" "$@"
+inotifywait -qq -e close_write,move_self "$input" &
+pid_inotifywait="$!"
+
+wait -n
+# FIXME: can't trust the rc from wait, because race conditions means if both processes have ended, then
+# which one did we get the rc from?
+child_rc="$?"
+
+# figure out which child it was, and act accordingly (remember to kill the other one)
+if ! kill -0 "$pid_inotifywait" > /dev/null 2>&1; then
+	# inotify ended
+	if [ "$child_rc" -eq 0 ]; then
+		# "actual change"
+		cleanup
+	else
+		# "failure"
+		cleanup
+		exit "$child_rc"
+	fi
 else
-    # failure
-    exit $?
+	# less must have ended, so the user wants to quit
+	cleanup
+	exit 0
 fi
 
+exec "$0" "$@"
