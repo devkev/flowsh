@@ -10,20 +10,12 @@ cachedir="$(dirname ${input})/.cache"
 
 mkdir -p "$cachedir"
 
-function show {
-    case "$1" in
-        bottom|end) local cmd=G ;;
-        top|start|*) local cmd=g ;;
-    esac
-    LESSOPEN= LESS= less -j1 -QXER +"${cmd}"q
-}
-export -f show
-
 function read_commands {
     readarray -t commands < <(sed -e '/^#/d' -e 's/^\s*//g' -e 's/\s*$//g' -e '/^$/d' "$input")
 }
 
 function generate_pipeline {
+	# FIXME: no need to use readarray here. just init the array and then append to it.
 	readarray -t pipeline_lines < <(
 		use_cache=''
 		cmdhash=''
@@ -45,23 +37,20 @@ function generate_pipeline {
 		if [ "$use_cache" ]; then
 			echo "cat '$use_cache'"
 		else
-			echo "cat"
+			if [ "${#commands[@]}" -eq 0 ]; then
+				echo "echo '(no commands)'"
+			else
+				echo "cat"
+			fi
 		fi
 	)
 }
 
-pid_less=''
-pid_inotifywait=''
-function cleanup {
-	if [ "$pid_less" ]; then
-		kill "$pid_less" > /dev/null 2>&1
-		pid_less=''
-	fi
-	if [ "$pid_inotifywait" ]; then
-		kill "$pid_inotifywait" > /dev/null 2>&1
-		pid_inotifywait=''
-	fi
-}
+# FIXME: Instead of this dodgy approach, print a message and then sit and wait for the file to be created.
+if [ ! -e "$input" ]; then
+	echo "$0: Error: input file $input does not exist, exiting" 1>&2
+	exit 1
+fi
 
 read_commands
 #declare -p commands
@@ -79,35 +68,83 @@ generate_pipeline
 #done
 #echo
 
+pid_less=''
+pid_inotifywait=''
+rcfile_less="$(mktemp)"
+rcfile_inotifywait="$(mktemp)"
+
+function cleanup {
+	if [ "$pid_less" ]; then
+		kill "$pid_less" > /dev/null 2>&1
+		pid_less=''
+	fi
+	rm -f "$rcfile_less"
+
+	if [ "$pid_inotifywait" ]; then
+		kill "$pid_inotifywait" > /dev/null 2>&1
+		pid_inotifywait=''
+	fi
+	rm -f "$rcfile_inotifywait"
+	stty sane
+}
+
 clear
-#generate | show
 # would be nice to show some sort of progress spinner...
-bash <(echo "${pipeline_lines[@]}") | LESS= less -nLQXR &
+bash <(echo "${pipeline_lines[@]}") | (
+	rm -f "$rcfile_less"
+	mypid=''
+	trap 'kill -9 $mypid 2>/dev/null' EXIT
+	# FIXME: custom less prompt (to show where we are looking at)
+	LESS= less -nLQXR &
+	mypid="$!"
+	wait
+	echo "$?" > "$rcfile_less"
+) &
 pid_less="$!"
 
-inotifywait -qq -e close_write,move_self "$input" &
+(
+	rm -f "$rcfile_inotifywait"
+	mypid=''
+	trap 'kill -9 $mypid 2>/dev/null' EXIT
+	inotifywait -qq -e close_write,move_self "$input" &
+	mypid="$!"
+	wait
+	echo "$?" > "$rcfile_inotifywait"
+) &
 pid_inotifywait="$!"
 
-wait -n
-# FIXME: can't trust the rc from wait, because race conditions means if both processes have ended, then
-# which one did we get the rc from?
-child_rc="$?"
+trap cleanup EXIT
 
-# figure out which child it was, and act accordingly (remember to kill the other one)
-if ! kill -0 "$pid_inotifywait" > /dev/null 2>&1; then
+wait -n
+
+# Can't trust the rc from wait, because race conditions means if both processes have ended,
+# then which one did we get the rc of?  So better to get it more directly.
+
+rc_less="$(cat "$rcfile_less" 2>/dev/null)"
+rc_inotifywait="$(cat "$rcfile_inotifywait" 2>/dev/null)"
+
+# if both have exited, less takes priority (since it's more directly user-driven)
+if [ "$rc_less" ]; then
+	# less has exited, so the user wants to quit
+	# FIXME: lesskey for custom ops?
+	exit 0
+elif [ "$rc_inotifywait" ]; then
 	# inotify ended
-	if [ "$child_rc" -eq 0 ]; then
-		# "actual change"
-		cleanup
+	if [ "$rc_inotifywait" -eq 0 ]; then
+		# actual change
+		# fall through to loop
+		:
 	else
-		# "failure"
-		cleanup
-		exit "$child_rc"
+		# failure
+		echo "$0: Error: inotifywait failure, exiting" 1>&2
+		exit "$rc_inotifywait"
 	fi
 else
-	# less must have ended, so the user wants to quit
-	cleanup
-	exit 0
+	# wait says that one has exited, but it hasn't recorded its rc in its file - strange, and shouldn't happen
+	echo "$0: Error: couldn't get rc of less or inotifywait, exiting" 1>&2
+	exit 1
 fi
 
+# 'exec' isn't exiting, so the trap doesn't fire, so call it manually
+cleanup
 exec "$0" "$@"
