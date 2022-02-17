@@ -16,6 +16,10 @@ if [ ! -e "$input" ]; then
 	exit 1
 fi
 
+# FIXME: add a way for a single command to span multiple lines
+# eg. if a line starts with whitespace, then its a continuation
+# eg. require a blank line between commands
+
 # read the commands from the input file
 readarray -t commands < <(sed -e '/^#/d' -e 's/^\s*//g' -e 's/\s*$//g' -e '/^$/d' -e '/^--$/,$d' "$input")
 #declare -p commands
@@ -88,6 +92,7 @@ function cleanup {
 		pid_inotifywait=''
 	fi
 	rm -f "$rcfile_inotifywait"
+
 	stty sane
 }
 
