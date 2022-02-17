@@ -14,6 +14,11 @@ function read_commands {
     readarray -t commands < <(sed -e '/^#/d' -e 's/^\s*//g' -e 's/\s*$//g' -e '/^$/d' -e '/^--$/,$d' "$input")
 }
 
+# FIXME: the cached files are only valid if the pipeline runs to completion, which it might not
+# because of how less buffers its input, or if the user re-saves the input file before the pipeline
+# has finished running.  so, the cache files should only become "active" once eof has been reached
+# (for that part of the pipeline).
+
 function generate_pipeline {
 	# FIXME: no need to use readarray here. just init the array and then append to it.
 	readarray -t pipeline_lines < <(
