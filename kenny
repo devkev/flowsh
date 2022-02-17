@@ -36,35 +36,33 @@ readarray -t commands < <(sed -e '/^#/d' -e 's/^\s*//g' -e 's/\s*$//g' -e '/^$/d
 #
 # with suitable adjustments to handle multiple pids/pidfiles for each tee part
 
-# FIXME: no need to use readarray here. just init the array and then append to it.
-readarray -t pipeline_lines < <(
-	use_cache=''
-	cmdhash=''
-	for cmd in "${commands[@]}"; do
-		cmdhash="$(sha256sum <<<"$cmdhash $cmd" | awk '{print $1}')"
-		if [ -e "$cachedir/$cmdhash" ]; then
-			# can skip this one, and use the cached results instead
-			use_cache="$cachedir/$cmdhash"
-		else
-			# cannot skip, must use (plus any previous cache input)
-			if [ "$use_cache" ]; then
-				echo "cat '$use_cache' |"
-				use_cache=''
-			fi
-			echo "$cmd |"
-			echo "tee '$cachedir/$cmdhash' |"
-		fi
-	done
-	if [ "$use_cache" ]; then
-		echo "cat '$use_cache'"
+pipeline_lines=()
+use_cache=''
+cmdhash=''
+for cmd in "${commands[@]}"; do
+	cmdhash="$(sha256sum <<<"$cmdhash $cmd" | awk '{print $1}')"
+	if [ -e "$cachedir/$cmdhash" ]; then
+		# can skip this one, and use the cached results instead
+		use_cache="$cachedir/$cmdhash"
 	else
-		if [ "${#commands[@]}" -eq 0 ]; then
-			echo "echo '(no commands)'"
-		else
-			echo "cat"
+		# cannot skip, must use (plus any previous cache input)
+		if [ "$use_cache" ]; then
+			pipeline_lines+=("cat '$use_cache' |")
+			use_cache=''
 		fi
+		pipeline_lines+=("$cmd |")
+		pipeline_lines+=("tee '$cachedir/$cmdhash' |")
 	fi
-)
+done
+if [ "$use_cache" ]; then
+	pipeline_lines+=("cat '$use_cache'")
+else
+	if [ "${#commands[@]}" -eq 0 ]; then
+		pipeline_lines+=("echo '(no commands)'")
+	else
+		pipeline_lines+=("cat")
+	fi
+fi
 
 #declare -p pipeline_lines
 #echo
