@@ -10,10 +10,6 @@ cachedir="$(dirname ${input})/.cache"
 
 mkdir -p "$cachedir"
 
-function read_commands {
-    readarray -t commands < <(sed -e '/^#/d' -e 's/^\s*//g' -e 's/\s*$//g' -e '/^$/d' -e '/^--$/,$d' "$input")
-}
-
 # FIXME: the cached files are only valid if the pipeline runs to completion, which it might not
 # because of how less buffers its input, or if the user re-saves the input file before the pipeline
 # has finished running.  so, the cache files should only become "active" once eof has been reached
@@ -63,7 +59,8 @@ if [ ! -e "$input" ]; then
 	exit 1
 fi
 
-read_commands
+# read the commands from the input file
+readarray -t commands < <(sed -e '/^#/d' -e 's/^\s*//g' -e 's/\s*$//g' -e '/^$/d' -e '/^--$/,$d' "$input")
 #declare -p commands
 #echo
 #for cmd in "${commands[@]}"; do
