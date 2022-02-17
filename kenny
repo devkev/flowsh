@@ -11,7 +11,7 @@ cachedir="$(dirname ${input})/.cache"
 mkdir -p "$cachedir"
 
 function read_commands {
-    readarray -t commands < <(sed -e '/^#/d' -e 's/^\s*//g' -e 's/\s*$//g' -e '/^$/d' "$input")
+    readarray -t commands < <(sed -e '/^#/d' -e 's/^\s*//g' -e 's/\s*$//g' -e '/^$/d' -e '/^--$/,$d' "$input")
 }
 
 function generate_pipeline {
