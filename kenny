@@ -19,6 +19,12 @@ function read_commands {
 # has finished running.  so, the cache files should only become "active" once eof has been reached
 # (for that part of the pipeline).
 
+# instead of "... | tee $cachefile | ... | less", use this:
+# 
+# rm -f $cachefile $cachefile.pid; ... | ( cat > $cachefile.part & pid=$!; echo $pid | tee $cachefile.pid; if wait %1; then mv -f $cachefile.part $cachefile; else rm -f $cachefile.part; fi; rm $cachefile.pid; ) | ( read pid; tail -c +1 --follow --pid $pid $cachefile.part; ) | ... | ( less; pid="$(cat $cachefile.pid 2>/dev/null)"; if [ "$pid" ]; then kill $pid; fi; )
+# 
+# with suitable adjustments to handle multiple pids/pidfiles for each tee part
+
 function generate_pipeline {
 	# FIXME: no need to use readarray here. just init the array and then append to it.
 	readarray -t pipeline_lines < <(
