@@ -55,7 +55,7 @@ function _make_cache_lines {
 	cache_pidfiles+=("$cache_file.pid")
 }
 
-function kill_cachers {
+function _kill_cachers {
 	for cache_pidfile in "${cache_pidfiles[@]}"; do
 		pid="$(cat "$cache_pidfile" 2>/dev/null)"
 		if [ "$pid" ]; then
@@ -110,7 +110,7 @@ pid_inotifywait=''
 rcfile_less="$(mktemp)"
 rcfile_inotifywait="$(mktemp)"
 
-function cleanup {
+function _cleanup {
 	if [ "$pid_less" ]; then
 		kill "$pid_less" > /dev/null 2>&1
 		pid_less=''
@@ -123,7 +123,7 @@ function cleanup {
 	fi
 	rm -f "$rcfile_inotifywait"
 
-	kill_cachers
+	_kill_cachers
 
 	stty sane
 }
@@ -135,7 +135,7 @@ clear
 bash <(echo "${pipeline_lines[@]}") | (
 	rm -f "$rcfile_less"
 	mypid=''
-	trap 'kill -9 $mypid 2>/dev/null; kill_cachers' EXIT
+	trap 'kill -9 $mypid 2>/dev/null; _kill_cachers' EXIT
 	# FIXME: custom less prompt (to show where we are looking at)
 	LESS= less -nLQXR &
 	mypid="$!"
@@ -155,7 +155,7 @@ pid_less="$!"
 ) &
 pid_inotifywait="$!"
 
-trap cleanup EXIT
+trap _cleanup EXIT
 
 wait -n
 
@@ -188,5 +188,5 @@ else
 fi
 
 # 'exec' isn't exiting, so the trap doesn't fire, so call it manually
-cleanup
+_cleanup
 exec "$0" "$@"
