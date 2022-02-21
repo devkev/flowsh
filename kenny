@@ -8,6 +8,10 @@ fi
 input="$1"
 cache_dir="$(dirname ${input})/.cache"
 
+# Silencing job-control messages requires some hoop-jumping.
+# https://stackoverflow.com/questions/11097761/is-there-a-way-to-make-bash-job-control-quiet/38278291#38278291
+set +m
+
 mkdir -p "$cache_dir"
 
 # FIXME: Instead of this dodgy approach, print a message and then sit and wait for the file to be created.
@@ -36,7 +40,7 @@ function _cache_part_1 {
 	cat > "$cache_file".part &
 	pid=$!
 	echo $pid | tee "$cache_file".pid
-	if wait %1; then
+	if wait %1 2>/dev/null; then
 		mv -f "$cache_file".part "$cache_file"
 	else
 		rm -f "$cache_file".part
@@ -132,17 +136,38 @@ rcfile_less="$(mktemp)"
 rcfile_inotifywait="$(mktemp)"
 
 function _cleanup {
+	# exiting or reloading
+	local mode="${1:-exiting}"
+
+	local kill_pids=()
+
 	if [ "$pid_less" ]; then
-		kill "$pid_less" > /dev/null 2>&1
+		kill_pids+=("$pid_less")
 		pid_less=''
 	fi
 	rm -f "$rcfile_less"
 
 	if [ "$pid_inotifywait" ]; then
-		kill "$pid_inotifywait" > /dev/null 2>&1
+		kill_pids+=("$pid_inotifywait")
 		pid_inotifywait=''
 	fi
 	rm -f "$rcfile_inotifywait"
+
+	if [ ${#kill_pids[@]} -gt 0 ]; then
+		case "$mode" in
+			reloading)
+				# If we're reloading, no need to silently wait, just send the signal
+				# and move on as fast as possible (so the user's updated pipeline runs
+				# as soon as possible).
+				kill "${kill_pids[@]}" > /dev/null 2>&1
+				;;
+			exiting|*)
+				# If we're exiting, then wait for the pids to exit, so we can redirect
+				# the job termination message to /dev/null.
+				{ kill "${kill_pids[@]}" && wait; } > /dev/null 2>&1
+				;;
+		esac
+	fi
 
 	_kill_cachers
 
@@ -160,7 +185,7 @@ bash <(echo "${pipeline_lines[@]}") | (
 	# FIXME: custom less prompt (to show where we are looking at)
 	LESS= less -nLQXR &
 	mypid="$!"
-	wait %1
+	wait %1 2>/dev/null
 	echo "$?" > "$rcfile_less"
 ) &
 pid_less="$!"
@@ -171,14 +196,14 @@ pid_less="$!"
 	trap 'kill -9 $mypid 2>/dev/null' EXIT
 	inotifywait -qq -e close_write,move_self "$input" &
 	mypid="$!"
-	wait %1
+	wait %1 2>/dev/null
 	echo "$?" > "$rcfile_inotifywait"
 ) &
 pid_inotifywait="$!"
 
 trap _cleanup EXIT
 
-wait -n
+wait -n 2>/dev/null
 
 # Can't trust the rc from wait, because race conditions means if both processes have ended,
 # then which one did we get the rc of?  So better to get it more directly.
@@ -209,5 +234,5 @@ else
 fi
 
 # 'exec' isn't exiting, so the trap doesn't fire, so call it manually
-_cleanup
+_cleanup reloading
 exec "$0" "$@"
