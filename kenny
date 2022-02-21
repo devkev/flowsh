@@ -29,6 +29,31 @@ readarray -t commands < <(sed -e '/^#/d' -e 's/^\s*//g' -e 's/\s*$//g' -e '/^$/d
 #done
 #echo
 
+function _cache_part_1 {
+	local cache_file="$1"
+
+	# part 1 - write input stream to cache file
+	cat > "$cache_file".part &
+	pid=$!
+	echo $pid | tee "$cache_file".pid
+	if wait %1; then
+		mv -f "$cache_file".part "$cache_file"
+	else
+		rm -f "$cache_file".part
+	fi
+	rm "$cache_file".pid
+}
+export -f _cache_part_1
+
+function _cache_part_2 {
+	local cache_file="$1"
+
+	# part 2 - read and output from cache file
+	read pid
+	tail -c +1 --follow --pid $pid "$cache_file".part
+}
+export -f _cache_part_2
+
 function _make_cache_lines {
 	local cache_file="$1"
 
@@ -44,12 +69,8 @@ function _make_cache_lines {
 	#
 	# with suitable adjustments to handle multiple pids/pidfiles (one for each tee part)
 
-	#pipeline_lines+=("tee '$cache_file' |")
-
-	# part 1 - write to cache file
-	pipeline_lines+=('( cat > '"'$cache_file'"'.part & pid=$!; echo $pid | tee '"'$cache_file'"'.pid; if wait %1; then mv -f '"'$cache_file'"'.part '"'$cache_file'"'; else rm -f '"'$cache_file'"'.part; fi; rm '"'$cache_file'"'.pid; ) |')
-	# part 2 - read from cache file
-	pipeline_lines+=('( read pid; tail -c +1 --follow --pid $pid '"'$cache_file'"'.part; ) |')
+	pipeline_lines+=('_cache_part_1 '"'$cache_file'"' |')
+	pipeline_lines+=('_cache_part_2 '"'$cache_file'"' |')
 
 	cache_files+=("$cache_file")
 	cache_pidfiles+=("$cache_file.pid")
