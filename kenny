@@ -120,7 +120,7 @@ bash <(echo "${pipeline_lines[@]}") | (
 	# FIXME: custom less prompt (to show where we are looking at)
 	LESS= less -nLQXR &
 	mypid="$!"
-	wait
+	wait %1
 	echo "$?" > "$rcfile_less"
 ) &
 pid_less="$!"
@@ -131,7 +131,7 @@ pid_less="$!"
 	trap 'kill -9 $mypid 2>/dev/null' EXIT
 	inotifywait -qq -e close_write,move_self "$input" &
 	mypid="$!"
-	wait
+	wait %1
 	echo "$?" > "$rcfile_inotifywait"
 ) &
 pid_inotifywait="$!"
