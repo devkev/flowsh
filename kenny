@@ -128,9 +128,8 @@ for cmd in "${commands[@]}"; do
 			pipeline_lines+=("cat '$use_cache' |")
 			use_cache=''
 		fi
-		# FIXME: wrap each pipeline stage inside `{}` (or maybe `()`),
-		# so that a line like "foo; bar" will work as expected
-		pipeline_lines+=("$cmd |")
+		# Wrap each pipeline stage inside `{}` so that a stage like "foo; bar" will work as expected.
+		pipeline_lines+=("{ $cmd ; } |")
 		_make_cache_lines "$cache_file"
 	fi
 done
