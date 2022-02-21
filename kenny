@@ -45,6 +45,9 @@ fi
 # eg. if a line starts with whitespace, then its a continuation
 # eg. require a blank line between commands
 
+# FIXME: add a way to invalidate the cache for a stage, and/or
+# otherwise mark a stage as being uncacheable.
+
 # read the commands from the input file
 readarray -t commands < <(sed -e 's/^\s*//g' -e 's/\s*$//g' -e '/^#/d' -e '/^$/d' -e 's/[;&]$//' -e '/^--$/,$d' "$input")
 #declare -p commands
