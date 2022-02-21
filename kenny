@@ -46,10 +46,12 @@ function cache {
 	pipeline_lines+=("tee '$cache_file' |")
 
 	cache_files+=("$cache_file")
+	cache_pidfiles+=("$cache_file.pid")
 }
 
 
 cache_files=()
+cache_pidfiles=()
 pipeline_lines=()
 use_cache=''
 cmdhash=''
@@ -106,6 +108,8 @@ function cleanup {
 
 	stty sane
 }
+
+rm -f "${cache_files[@]}" "${cache_pidfiles[@]}"
 
 clear
 # would be nice to show some sort of progress spinner...
