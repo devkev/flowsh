@@ -6,9 +6,9 @@ if [ $# -ne 1 ]; then
 fi
 
 input="$1"
-cachedir="$(dirname ${input})/.cache"
+cache_dir="$(dirname ${input})/.cache"
 
-mkdir -p "$cachedir"
+mkdir -p "$cache_dir"
 
 # FIXME: Instead of this dodgy approach, print a message and then sit and wait for the file to be created.
 if [ ! -e "$input" ]; then
@@ -34,20 +34,31 @@ readarray -t commands < <(sed -e '/^#/d' -e 's/^\s*//g' -e 's/\s*$//g' -e '/^$/d
 # has finished running.  so, the cache files should only become "active" once eof has been reached
 # (for that part of the pipeline).
 
-# instead of "... | tee $cachefile | ... | less", use this:
-#
-# rm -f $cachefile $cachefile.pid; ... | ( cat > $cachefile.part & pid=$!; echo $pid | tee $cachefile.pid; if wait %1; then mv -f $cachefile.part $cachefile; else rm -f $cachefile.part; fi; rm $cachefile.pid; ) | ( read pid; tail -c +1 --follow --pid $pid $cachefile.part; ) | ... | ( less; pid="$(cat $cachefile.pid 2>/dev/null)"; if [ "$pid" ]; then kill $pid; fi; )
-#
-# with suitable adjustments to handle multiple pids/pidfiles for each tee part
+function cache {
+	local cache_file="$1"
 
+	# instead of "... | tee $cachefile | ... | less", use this:
+	#
+	# rm -f $cachefile $cachefile.pid; ... | ( cat > $cachefile.part & pid=$!; echo $pid | tee $cachefile.pid; if wait %1; then mv -f $cachefile.part $cachefile; else rm -f $cachefile.part; fi; rm $cachefile.pid; ) | ( read pid; tail -c +1 --follow --pid $pid $cachefile.part; ) | ... | ( less; pid="$(cat $cachefile.pid 2>/dev/null)"; if [ "$pid" ]; then kill $pid; fi; )
+	#
+	# with suitable adjustments to handle multiple pids/pidfiles for each tee part
+
+	pipeline_lines+=("tee '$cache_file' |")
+
+	cache_files+=("$cache_file")
+}
+
+
+cache_files=()
 pipeline_lines=()
 use_cache=''
 cmdhash=''
 for cmd in "${commands[@]}"; do
 	cmdhash="$(sha256sum <<<"$cmdhash $cmd" | awk '{print $1}')"
-	if [ -e "$cachedir/$cmdhash" ]; then
+	cache_file="$cache_dir/$cmdhash"
+	if [ -e "$cache_file" ]; then
 		# can skip this one, and use the cached results instead
-		use_cache="$cachedir/$cmdhash"
+		use_cache="$cache_file"
 	else
 		# cannot skip, must use (plus any previous cache input)
 		if [ "$use_cache" ]; then
@@ -55,7 +66,7 @@ for cmd in "${commands[@]}"; do
 			use_cache=''
 		fi
 		pipeline_lines+=("$cmd |")
-		pipeline_lines+=("tee '$cachedir/$cmdhash' |")
+		cache "$cache_file"
 	fi
 done
 if [ "$use_cache" ]; then
