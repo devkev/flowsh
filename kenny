@@ -14,10 +14,31 @@ set +m
 
 mkdir -p "$cache_dir"
 
-# FIXME: Instead of this dodgy approach, print a message and then sit and wait for the file to be created.
+# If the input file doesn't exist yet, wait for it.
+# https://unix.stackexchange.com/questions/323901/how-to-use-inotifywait-to-watch-a-directory-for-creation-of-files-of-a-specific
 if [ ! -e "$input" ]; then
-	echo "$0: Error: input file $input does not exist, exiting" 1>&2
-	exit 1
+	echo "$0: Warning: input file $input does not exist, waiting for it to be created..." 1>&2
+
+	inotifywait_pidfile="$(mktemp)"
+	trap 'kill $(cat "$inotifywait_pidfile" 2>/dev/null) 2>/dev/null ; rm -f "$inotifywait_pidfile"' EXIT
+	(
+		# redirect stderr to stdout, and don't use `-q`, so that the
+		# 'Setting up watches' and 'Watches established' messages go to
+		# the loop below, and trigger it to check for if the $input file
+		# has been racily created between the check above, and inotifywait
+		# setting up its watches.
+		inotifywait -m "$(dirname "$input")" -e create -e moved_to 2>&1 &
+		echo $! > "$inotifywait_pidfile"
+		wait %1 2>/dev/null
+	) |
+		while read dir action file; do
+			if [ "$file" = "$input" -o -e "$input" ]; then
+				kill $(cat "$inotifywait_pidfile" 2>/dev/null) 2>/dev/null
+				rm -f "$inotifywait_pidfile"
+				break
+			fi
+		done
+	trap '' EXIT
 fi
 
 # FIXME: add a way for a single command to span multiple lines
