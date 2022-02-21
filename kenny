@@ -46,7 +46,7 @@ fi
 # eg. require a blank line between commands
 
 # read the commands from the input file
-readarray -t commands < <(sed -e 's/^\s*//g' -e 's/\s*$//g' -e '/^#/d' -e '/^$/d' -e '/^--$/,$d' "$input")
+readarray -t commands < <(sed -e 's/^\s*//g' -e 's/\s*$//g' -e '/^#/d' -e '/^$/d' -e 's/[;&]$//' -e '/^--$/,$d' "$input")
 #declare -p commands
 #echo
 #for cmd in "${commands[@]}"; do
