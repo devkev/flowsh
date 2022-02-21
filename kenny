@@ -179,7 +179,10 @@ function _cleanup {
 			reloading)
 				# If we're reloading, no need to silently wait, just send the signal
 				# and move on as fast as possible (so the user's updated pipeline runs
-				# as soon as possible).
+				# as soon as possible).  Disown all jobs first so that we don't get
+				# termination messages from them, without having to synchronously wait
+				# for them (which slows down the restart).
+				disown -a
 				kill "${kill_pids[@]}" > /dev/null 2>&1
 				;;
 			exiting|*)
