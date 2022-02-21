@@ -29,26 +29,41 @@ readarray -t commands < <(sed -e '/^#/d' -e 's/^\s*//g' -e 's/\s*$//g' -e '/^$/d
 #done
 #echo
 
-# FIXME: the cached files are only valid if the pipeline runs to completion, which it might not
-# because of how less buffers its input, or if the user re-saves the input file before the pipeline
-# has finished running.  so, the cache files should only become "active" once eof has been reached
-# (for that part of the pipeline).
-
-function cache {
+function _make_cache_lines {
 	local cache_file="$1"
+
+	# The cached files are only valid if the pipeline runs to completion, which it might not
+	# because of how less buffers its input, or if the user re-saves the input file before the pipeline
+	# has finished running.  So, the cache files only become "active" once eof has been reached
+	# (for that part of the pipeline).  Doing this, while ensuring that data still flows through the
+	# pipeline as fast as possible, requries some hoop-jumping.
 
 	# instead of "... | tee $cachefile | ... | less", use this:
 	#
 	# rm -f $cachefile $cachefile.pid; ... | ( cat > $cachefile.part & pid=$!; echo $pid | tee $cachefile.pid; if wait %1; then mv -f $cachefile.part $cachefile; else rm -f $cachefile.part; fi; rm $cachefile.pid; ) | ( read pid; tail -c +1 --follow --pid $pid $cachefile.part; ) | ... | ( less; pid="$(cat $cachefile.pid 2>/dev/null)"; if [ "$pid" ]; then kill $pid; fi; )
 	#
-	# with suitable adjustments to handle multiple pids/pidfiles for each tee part
+	# with suitable adjustments to handle multiple pids/pidfiles (one for each tee part)
 
-	pipeline_lines+=("tee '$cache_file' |")
+	#pipeline_lines+=("tee '$cache_file' |")
+
+	# part 1 - write to cache file
+	pipeline_lines+=('( cat > '"'$cache_file'"'.part & pid=$!; echo $pid | tee '"'$cache_file'"'.pid; if wait %1; then mv -f '"'$cache_file'"'.part '"'$cache_file'"'; else rm -f '"'$cache_file'"'.part; fi; rm '"'$cache_file'"'.pid; ) |')
+	# part 2 - read from cache file
+	pipeline_lines+=('( read pid; tail -c +1 --follow --pid $pid '"'$cache_file'"'.part; ) |')
 
 	cache_files+=("$cache_file")
 	cache_pidfiles+=("$cache_file.pid")
 }
 
+function kill_cachers {
+	for cache_pidfile in "${cache_pidfiles[@]}"; do
+		pid="$(cat "$cache_pidfile" 2>/dev/null)"
+		if [ "$pid" ]; then
+			kill $pid 2>/dev/null
+			# no need to rm the pidfile here, since that will always be done by the part 1 sub-process
+		fi
+	done
+}
 
 cache_files=()
 cache_pidfiles=()
@@ -67,8 +82,10 @@ for cmd in "${commands[@]}"; do
 			pipeline_lines+=("cat '$use_cache' |")
 			use_cache=''
 		fi
+		# FIXME: wrap each pipeline stage inside `{}` (or maybe `()`),
+		# so that a line like "foo; bar" will work as expected
 		pipeline_lines+=("$cmd |")
-		cache "$cache_file"
+		_make_cache_lines "$cache_file"
 	fi
 done
 if [ "$use_cache" ]; then
@@ -106,6 +123,8 @@ function cleanup {
 	fi
 	rm -f "$rcfile_inotifywait"
 
+	kill_cachers
+
 	stty sane
 }
 
@@ -116,7 +135,7 @@ clear
 bash <(echo "${pipeline_lines[@]}") | (
 	rm -f "$rcfile_less"
 	mypid=''
-	trap 'kill -9 $mypid 2>/dev/null' EXIT
+	trap 'kill -9 $mypid 2>/dev/null; kill_cachers' EXIT
 	# FIXME: custom less prompt (to show where we are looking at)
 	LESS= less -nLQXR &
 	mypid="$!"
