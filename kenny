@@ -208,8 +208,18 @@ bash <(echo "${pipeline_lines[@]}") | (
 	rm -f "$rcfile_less"
 	mypid=''
 	trap 'kill -9 $mypid 2>/dev/null; _kill_cachers' EXIT
-	# FIXME: custom less prompt (to show where we are looking at)
-	LESS= less -nLQXR &
+
+	# less(1)'s argument parsing is broken-by-design.  The '$' character anywhere in an
+	# argument terminates that argument, with no way of quoting/escaping it.  This means the
+	# only way to get a `$` character in a custom prompt is to use `%E`, which expands to
+	# $VISUAL/$EDITOR, which we can set to `'$'`, and rely on the user not actually being
+	# able to press `v` to open the editor because input is from stdin (which cannot be
+	# edited).  And this is all on top of needing to quote the weird motley of characters
+	# used for prompt formatting.  What a mess.
+	view_cmd="${commands[$((${#commands[@]}-1))]}"
+	less_prompt="$(sed -e 's,\\,\\\\,g' -e 's,[?:.%],\\&,g' -e 's,\$,%E,g' <<<"$view_cmd")"
+
+	LESS= VISUAL='$' less -nLQXR -Ps"$less_prompt" +b &
 	mypid="$!"
 	wait %1 2>/dev/null
 	echo "$?" > "$rcfile_less"
