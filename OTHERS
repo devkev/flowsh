@@ -1,0 +1,36 @@
+
+Ultimate Plumber
+https://github.com/akavel/up
+Written in Go.
+Nice fast feedback loop.
+Initial input is external to tool.
+Pipeline is written horizontally, directly in the tool itself.
+No caching?
+Fixed 40MB output limit.
+
+Pipecut
+http://pipecut.org/index.html
+Seems very immature, also stale/inactive.
+Custom DSL and terminology ("blades"), not actual unix utilities.
+No caching?
+
+Pipeline
+https://github.com/codekitchen/pipeline
+Good, but pipeline is written in the tool, horizontally.
+Doesn't allow cutting into the pipeline for observability.
+Written in C with ncurses and readline.
+No caching.
+
+ShellPiper
+https://github.com/TheYarin/ShellPiper
+Graphical tool using Electron.
+Has caching (in RAM?).
+
+Composure
+https://github.com/erichs/composure
+More geared towards incrementally writing a full shell script.
+Doesn't provide immediate feedback.
+
+The Unix Chainsaw (presentation by Gary Bernhardt at a 2011 ruby conference)
+https://www.youtube.com/watch?v=sCZJblyT_XM
+
