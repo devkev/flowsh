@@ -6,7 +6,7 @@ if [ $# -ne 1 ]; then
 fi
 
 input="$1"
-cache_dir="$(dirname ${input})/.cache"
+cache_dir="$(dirname ${input})/.flowsh-cache"
 
 # Silencing job-control messages requires some hoop-jumping.
 # https://stackoverflow.com/questions/11097761/is-there-a-way-to-make-bash-job-control-quiet/38278291#38278291

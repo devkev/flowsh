@@ -51,8 +51,6 @@
 
 - find a better name than "kenny" :(
 
-- rename the cache dir to .kenny-cache (or something less generic than .cache, anyway)
-
 
 - cmdline option to output a pretty-printed shell script that just runs the entire pipeline
 
